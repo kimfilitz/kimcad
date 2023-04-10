@@ -21,6 +21,6 @@ Here you can begin drawing a polyline with Left-Mouse-Click and end it again wit
 Holding SHIFT will constraint the path to 90 degree angles.
 
 #### Constraints
-the path can be constrain to delta X and Y Values, angle and/ or length. Just enter the Values in the Fields. Angle and Length can be combined by selecting the '+' Button between them
+the path can be constrain to delta X and Y Values, angle and/ or length. Just enter the Values in the Fields. Angle and Length can be combined by selecting the '+' Button between them.
 
 #### Snaps
