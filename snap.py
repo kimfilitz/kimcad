@@ -42,12 +42,11 @@ class VertexSnap:
 				
 				matW = activeObject.matrix_world
 				
-				worldCoordinates = [matW @ v.co for v in bm.verts]
+				worldCoordinates = [matW @ v.co for v in bm.verts] # übersetzung von local in world coordinates
 				
 				pos = path[-1]
 				
 				print("::snap len verts: "+str(len(verts)))
-				print("::snap second vertex: "+str(verts[1].co))
 				
 				bestVerts = [None, None, None]
 				bestDistances = [self.snapdistance, self.snapdistance, self.snapdistance]
@@ -98,7 +97,7 @@ class EdgeSnap:
 				pos = path[-1]
 				p = np.array([pos.x, pos.y])
 				
-				print(' p: '+str(p))
+				print('  p: '+str(p))
 				
 				snappedEdge = getNearestEdge(p, bm, matW, self.snapdistance)
 				
@@ -138,18 +137,21 @@ def getNearestEdge(p, bm, matW, snapdistance):
 					#print(' pend: '+str(pend))
 					
 					d = perpendicularDistance(p, pstart, pend)
-					print(' d: '+str(d))
+					print('  d: '+str(d))
 					
 					if d < snapdistance:
-						print(' d < self.snapdistance ')
+						print('  d < self.snapdistance ')
 						snappedEdge = [pstart, pend]
 						snappedEdges.append([pstart, pend])
 						snappedEdgesDistance.append(d)
 				
 				if snappedEdge:
 					index = snappedEdgesDistance.index(min(snappedEdgesDistance))
-					print("  index: "+str(index)+ ' bestVerts: '+str(snappedEdges))
+					print("  index: "+str(index)+ ' snappedEdges: '+str(snappedEdges))
 					snappedEdge = snappedEdges[index]
+					return snappedEdge
+				
+				return None
 				
 				
 	
@@ -216,7 +218,7 @@ class EdgePerpendicularSnap:
 	def snap(self, path, activeObject):
 		print('  ----- snap  name '+str(self.name))
 		# gehe von Object-Mode aus
-		if activeObject:
+		if activeObject and len(path) > 1:
 			
 			print('  ----- snap  isinstance '+str(isinstance(activeObject.data, bpy.types.Mesh)))
 			

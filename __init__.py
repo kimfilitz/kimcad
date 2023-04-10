@@ -1,20 +1,20 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 # ----------------------------------------------------------
-# Author: Antonio Vazquez (antonioya)
+# Author: Kim Filitz (kimfilitz)
 # ----------------------------------------------------------
 
 # ----------------------------------------------
 # Define Addon info
 # ----------------------------------------------
 bl_info = {
-	"name": "sebiBauteile",
-	"author": "sebi",
+	"name": "kimcad",
+	"author": "kim filitz",
 	"location": "View3D > Add Mesh / Sidebar > Create Tab",
-	"version": (1, 2, 3),
+	"version": (0, 0, 1),
 	"blender": (3, 0, 0),
-	"description": "Generate wooden Elements for Architecue",
-	"doc_url": "{BLENDER_MANUAL_URL}/addons/add_mesh/sebiBauteile.html",
+	"description": "Generate simple Elements for Architectural Designs with Control-Lines",
+	"doc_url": "https://github.com/kimfilitz/kimcad",
 	"category": "Add Mesh"
 	}
 
@@ -26,12 +26,12 @@ import os
 # ----------------------------------------------
 if "bpy" in locals():
 	import importlib
-	importlib.reload(sebi_bauteile_maker)
+	importlib.reload(mesh_partsmaker)
 	print("sebi: Reloaded multifiles")
 else:
-	from . import sebi_bauteile_maker
-	from . import SimpleWall
-	from . import KIMPartsTool
+	from . import mesh_partsmaker
+	from . import simple_wall
+	from . import kimpartstool
 	from .properties import KIMPartAttributes
 
 	print("sebi: Imported multifiles")
@@ -67,7 +67,7 @@ from bpy.types import (
 
 class SEBI_MT_CustomMenuAdd(Menu):
 	bl_idname = "VIEW3D_MT_mesh_custom_menu_add"
-	bl_label = "sebiBauteile"
+	bl_label = "kim Parts"
 
 
 	def draw(self, context):
@@ -83,7 +83,7 @@ class SEBI_MT_CustomMenuAdd(Menu):
 # --------------------------------------------------------------
 
 # Define menu
-def SebiMenu_func(self, context):
+def kimMenu_func(self, context):
 	print("::SebiMenu_func "+str(context))
 	layout = self.layout
 	layout.separator()
@@ -104,23 +104,22 @@ def on_depsgraph_update(scene):
 			
 			if edit_obj.KIMAttributes.objecttype == KIMPartAttributes.CTRLLINE:
 				if edit_obj.KIMAttributes.parttype == KIMPartAttributes.WOODENPART:
-					sebi_bauteile_maker.mesh_update(edit_obj, scene)
+					mesh_partsmaker.mesh_update(edit_obj, scene)
 				if edit_obj.KIMAttributes.parttype == KIMPartAttributes.WALL:
-					SimpleWall.mesh_update(edit_obj, scene)
+					simple_wall.mesh_update(edit_obj, scene)
 			
 			
 			
 			
 classes = (
 	SEBI_MT_CustomMenuAdd,
-	sebi_bauteile_maker.SEBITEILE_OT_PLANKS,
-	sebi_bauteile_maker.SEBITEILE_PT_BauteileObjectPanel,
-	sebi_bauteile_maker.SEBITEILE_OT_PILLAR,
-	sebi_bauteile_maker.SEBITEILE_OT_BEAM,
-	sebi_bauteile_maker.SEBITEILE_OT_RAFTER,
-	SimpleWall.SEBITEILE_OT_SIMPLEWALL,
-	SimpleWall.SEBITEILE_OT_SIMPLEWALLPROPS,
-	SimpleWall.SEBITEILE_OT_SIMPLEWALLADD
+	mesh_partsmaker.SEBITEILE_OT_PLANKS,
+	mesh_partsmaker.SEBITEILE_PT_BauteileObjectPanel,
+	mesh_partsmaker.SEBITEILE_OT_PILLAR,
+	mesh_partsmaker.SEBITEILE_OT_BEAM,
+	mesh_partsmaker.SEBITEILE_OT_RAFTER,
+	simple_wall.SEBITEILE_OT_SIMPLEWALLPROPS,
+	simple_wall.SEBITEILE_OT_SIMPLEWALLADD
 	
 )
 
@@ -134,7 +133,7 @@ def register():
 	for cls in classes:
 		register_class(cls)
 
-	VIEW3D_MT_mesh_add.append(SebiMenu_func)
+	VIEW3D_MT_mesh_add.append(kimMenu_func)
 
 	# Make blender call on_depsgraph_update after each
 	# update of Blender's internal dependency graph
@@ -153,18 +152,18 @@ def register():
 	Object.KIMAttributes = PointerProperty(type=KIMPartAttributes)
 	
 	
-	bpy.utils.register_class(SimpleWall.HeightItem)
+	bpy.utils.register_class(simple_wall.HeightItem)
 	
 	# Register Properties
-	bpy.utils.register_class(SimpleWall.SimpleWallObjectProperties)
-	Object.KIMSimpleWallProperties = PointerProperty(type=SimpleWall.SimpleWallObjectProperties)
+	bpy.utils.register_class(simple_wall.SimpleWallObjectProperties)
+	Object.KIMSimpleWallProperties = PointerProperty(type=simple_wall.SimpleWallObjectProperties)
 	
 	# Register Tool
-	bpy.utils.register_tool(KIMPartsTool.KIMPartsTool, after={"builtin.scale_cage"}, separator=True, group=True)
+	bpy.utils.register_tool(kimpartstool.KIMPartsTool, after={"builtin.scale_cage"}, separator=True, group=True)
 	
 	# Register Properties
-	bpy.utils.register_class(SimpleWall.ConstraintProperties)
-	bpy.types.Scene.KIMConstraintProperties = bpy.props.PointerProperty(type=SimpleWall.ConstraintProperties)
+	bpy.utils.register_class(simple_wall.ConstraintProperties)
+	bpy.types.Scene.KIMConstraintProperties = bpy.props.PointerProperty(type=simple_wall.ConstraintProperties)
 	
 	# OpenGL flag
 	wm = WindowManager
@@ -247,12 +246,12 @@ def unregister():
 	for cls in reversed(classes):
 		unregister_class(cls)
 
-	VIEW3D_MT_mesh_add.remove(SebiMenu_func)
+	VIEW3D_MT_mesh_add.remove(kimMenu_func)
 
 	# Remove properties
 	del Scene.sebiBauteile
 	
-	bpy.utils.unregister_tool(KIMPartsTool.KIMPartsTool)
+	bpy.utils.unregister_tool(kimpartstool.KIMPartsTool)
 	
 	# remove OpenGL data
 	#achm_main_panel.ARCHIMESH_OT_HintDisplay.handle_remove(achm_main_panel.ARCHIMESH_OT_HintDisplay, bpy.context)
