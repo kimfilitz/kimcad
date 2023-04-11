@@ -6,6 +6,8 @@ from gpu_extras.batch import batch_for_shader
 from bpy.props import IntProperty, FloatProperty
 from bpy.types import SpaceView3D
 
+from .properties import KIMPartAttributes 
+
 class CtrlLineDrawHandler:
 	installed = None
 
@@ -25,21 +27,30 @@ class CtrlLineDrawHandler:
 		cls.installed = None
 
 	def __call__(self):
-		bgl.glLineWidth(2)
-		bgl.glPointSize(6)
-		bgl.glEnable(bgl.GL_BLEND)
-		bgl.glEnable(bgl.GL_LINE_SMOOTH)
-			
+		
 		object = bpy.context.object
-		
 		objects = bpy.context.visible_objects
+		active_object = bpy.context.active_object
 		
+		gpu.state.point_size_set(4.0)
+		
+		bgl.glEnable(bgl.GL_BLEND)
+		bgl.glLineWidth(1)
+		bgl.glPointSize(6)
+		
+		viewport = gpu.state.viewport_get()
+
 		
 		print("DecorationsHandler::__call__ objs: "+str(len(bpy.context.visible_objects)))
+		print("DecorationsHandler:: viewport: "+str(gpu.state.viewport_get()))
 		
 		for obj in objects:
-		
-			if "sebi_bauteile.ctrl_line" in obj:
+			
+			
+			ma = obj.KIMAttributes
+			
+			#draw only ctrl-lines
+			if ma.objecttype == KIMPartAttributes.CTRLLINE: 
 				
 	
 				white = (1, 1, 1, 1)
@@ -51,7 +62,10 @@ class CtrlLineDrawHandler:
 				blue_t = (0.157, 0.565, 1, 0.1)
 				grey = (0.2, 0.2, 0.2, 1)
 	
-				self.shader = gpu.shader.from_builtin("3D_UNIFORM_COLOR")
+				self.shader = gpu.shader.from_builtin('POLYLINE_UNIFORM_COLOR')
+				gpu.state.blend_set('ALPHA')
+				self.shader.uniform_float("lineWidth", (2.0))
+				self.shader.uniform_float("viewportSize", (viewport[2], viewport[3]))
 	
 				verts = []
 				selected_edges = []
@@ -89,14 +103,17 @@ class CtrlLineDrawHandler:
 					batch = batch_for_shader(self.shader, "LINES", {"pos": verts}, indices=selected_edges)
 					self.shader.uniform_float("color", green)
 					batch.draw(self.shader)
+					
+					
+					shaderPoints = gpu.shader.from_builtin("3D_UNIFORM_COLOR")
+					
+					batch = batch_for_shader(shaderPoints, "POINTS", {"pos": unselected_vertices})
+					shaderPoints.uniform_float("color", blue)
+					batch.draw(shaderPoints)
 	
-					batch = batch_for_shader(self.shader, "POINTS", {"pos": unselected_vertices})
-					self.shader.uniform_float("color", white)
-					batch.draw(self.shader)
-	
-					batch = batch_for_shader(self.shader, "POINTS", {"pos": selected_vertices})
-					self.shader.uniform_float("color", green)
-					batch.draw(self.shader)
+					batch = batch_for_shader(shaderPoints, "POINTS", {"pos": selected_vertices})
+					shaderPoints.uniform_float("color", white)
+					batch.draw(shaderPoints)
 				else:
 					bm = bmesh.new()
 					bm.from_mesh(obj.data)
@@ -104,29 +121,20 @@ class CtrlLineDrawHandler:
 					verts = [tuple(obj.matrix_world @ v.co) for v in bm.verts]
 					edges = [tuple([v.index for v in e.verts]) for e in bm.edges]
 					
+					color = blue
+					
+					if obj == active_object:
+						color = green
+						
 					batch = batch_for_shader(self.shader, "LINES", {"pos": verts}, indices=edges)
 					self.shader.bind()
-					self.shader.uniform_float("color", blue)
+					self.shader.uniform_float("color", color)
 					batch.draw(self.shader)
+					
+				
 	
 				if obj.mode != "EDIT":
 					bm.free()
 
-'''
-def register():
-    bpy.utils.register_class(CtrlLineDrawHandler)
-
-
-def unregister():
-    bpy.utils.unregister_class(CtrlLineDrawHandler)
-'''
-
-if __name__ == "__main__":
-    #register()
-	print("__main__")
+ 
 	
-	CtrlLineDrawHandler.install()
-	
-    # test call
-    #bpy.ops.object.CtrlLineDrawHandler('INVOKE_DEFAULT')
-    
