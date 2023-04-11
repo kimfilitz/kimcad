@@ -303,6 +303,33 @@ class EdgeCenterSnap:
 					
 		return None	
 		
+#
+# Snap to Grid
+#
+class IncrementSnap:
+	def __init__(self, snapdistance):
+		self.snapdistance = snapdistance
+		self.name = 'INCREMENT'
+		self.absolute = bpy.context.tool_settings.use_snap_grid_absolute
+		
+	def snap(self, path, activeObject):
+		pos = path[-1]
+		
+		if self.absolute: # springt auf absolute Rasterpunkte
+			resultX = round(pos.x)
+			resultY = round(pos.y)
+			return mathutils.Vector((resultX, resultY, 0))
+		
+		elif not self.absolute and len(path) > 1: # macht nur Sinn, wenn es bereits zwei Punkte gibt
+			
+			beforepos = path[-2]
+			
+			dX = beforepos.x - round(beforepos.x)
+			dY = beforepos.y - round(beforepos.y)
+		
+			resultX = round(pos.x) + dX
+			resultY = round(pos.y) + dY
+			return mathutils.Vector((resultX, resultY, 0))
 	
 
 def createSnapCircle(radius):
@@ -342,6 +369,8 @@ class SnapHandler:
 				self.activeSnaps.append(EdgePerpendicularSnap(0.2))
 			elif s == 'EDGE_MIDPOINT':
 				self.activeSnaps.append(EdgeCenterSnap(0.2))
+			elif s == 'INCREMENT':
+				self.activeSnaps.append(IncrementSnap(0.2))
 				
 		print('self.activeSnaps: '+str(self.activeSnaps))
 	
@@ -368,6 +397,9 @@ class SnapHandler:
 		if 'EDGE' in foundSnaps.keys():
 			self.snap_Element = 'EDGE'
 			return foundSnaps['EDGE']
+		if 'INCREMENT' in foundSnaps.keys():
+			self.snap_Element = 'INCREMENT'
+			return foundSnaps['INCREMENT']
 		
 		return result
 	
