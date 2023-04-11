@@ -10,7 +10,7 @@ this addon is in pre-alpha stage. Mostly technical demonstration.
 
 
 ### Usage
-Architectural Elements can be added through two ways: 
+architectural elements can be added in two ways:
 1. Add -> Mesh -> Kim Parts (Beams, Rafters, simple Walls)
 2. Workspace Tools, until now adding simple walls are implemented
 
