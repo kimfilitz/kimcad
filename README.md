@@ -24,3 +24,9 @@ Holding SHIFT will constraint the path to 90 degree angles.
 the path can be constrain to delta X and Y Values, angle and/ or length. Just enter the Values in the Fields. Angle and Length can be combined by selecting the '+' Button between them.
 
 #### Snaps
+the following Snaps are implemented:
+- Increment (Absolute Grid Snap and relative)
+- Point
+- Edge
+- Edge Center
+- Edge Perpendicular
