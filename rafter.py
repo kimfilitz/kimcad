@@ -16,6 +16,8 @@ from bpy.props import StringProperty, FloatProperty, BoolProperty, IntProperty, 
 from . import polygons
 from . import properties
 from .polygons import intersectionLinePlane
+from .polygons import getOffsetDeltas
+from .polygons import intersectionPoint
 from .properties import KIMPartAttributes
 from .snap import SnapHandler
 from .snap import createSnapCircle
@@ -26,8 +28,8 @@ lastcoords = []
 #
 # Factory for creating Simple Walls
 #
-class SimpleWall:
-	type = 'SimpleWall'
+class Rafter:
+	type = 'Rafter'
 
 	def __init__(self, initValues):
 		
@@ -38,72 +40,69 @@ class SimpleWall:
 	#	
 	def create_object(self, context):
 
-		print("::create_object context: "+str(context))
-		print("::create_object self: "+str(self))
-		print("::create_object width: "+str(self.initDic.get('width')))
-		print("::create_object width: "+str(self.initDic.get('path')))
+		print("::create_rafter_object context: "+str(context))
+		print("::create_rafter_object self: "+str(self))
+		print("::create_rafter_object angle: "+str(self.initDic.get('rafter_angle')))
+		print("::create_rafter_object type: "+str(self.initDic.get('type')))
+		print("::create_rafter_object ueber: "+str(self.initDic.get('ueber')))
 		
-		width = self.initDic.get('width')
+		angle = self.initDic.get('rafter_angle')
+		ueber = self.initDic.get('ueber')
 		path = self.initDic.get('path')
-		
 	
 		# deselect all objects
 		for o in bpy.data.objects:
 			o.select_set(False)
-		  
+		
 		#
 		# we create main object and mesh
 		#
-		mainmesh = bpy.data.meshes.new(self.type)
+		mainmesh = bpy.data.meshes.new("rafter")
 		
-		mainobject = bpy.data.objects.new(self.type, mainmesh)
-		#mainobject.location = bpy.context.scene.cursor.location # take cursor location
-		mainobject.location = path[0]
+		mainobject = bpy.data.objects.new('Rafter', mainmesh)
+		mainobject.location = path[0] # take first point
 		bpy.context.collection.objects.link(mainobject)
 		
-		#mainobject.SimpleWallProperties.add() # only with CollectionProperty
 		
-		#print("::create_object mainobject.SimpleWallProperties: "+str(mainobject.KIMSimpleWallProperties))
-		
-		#mainobject["sebi_bauteile.mainobject"] = True
-		
-		ma = mainobject.KIMAttributes
-		ma.parttype = KIMPartAttributes.WALL
-		ma.objecttype = KIMPartAttributes.MAINOBJECT
-		
+	
 		# we select, and activate, main object
 		mainobject.select_set(True)
 		bpy.context.view_layer.objects.active = mainobject
-	
+		
+		ma = mainobject.KIMAttributes
+		ma.parttype = KIMPartAttributes.RAFTER
+		ma.objecttype = KIMPartAttributes.MAINOBJECT
+		
 		# we shape the main object and create other objects as children
 		# set Standard -Values
-		mp = mainobject.KIMSimpleWallProperties
+		mp = mainobject.KIMPartProps
 		mp.update = False #prevent updating before object creation
 		
-		mp.type = self.type
-		mp.width = width
+		mp.type = 'Rafter'
+		mp.standards = "6"
+		mp.rafter_angle = angle
+		mp.ueber = ueber
 		
-		# generate Mesh and Sub-Objects
-		#generate_Geometry(mainobject, mainmesh)
+		mp.listener = self
+		
+		print("::create_rafter_object mp: "+str(mp))
+		print("::create_rafter_object mp.listener: "+str(mp.listener))
 		
 		#
 		# generate sub-object for ctrl-Line
 		#
 		ctrlmesh = bpy.data.meshes.new("ctrl-Line")
-		
+	
 		ctrl_o = bpy.data.objects.new("ctrl-Line", ctrlmesh)
 		bpy.context.collection.objects.link(ctrl_o)
 		
-		# configure Collection-Property to detect Controller
-		ma = ctrl_o.KIMAttributes
-		ma.parttype = KIMPartAttributes.WALL
-		ma.objecttype = KIMPartAttributes.CTRLLINE
-			
-		# create Mesh for control-line
-		#self.generate_CtrlLine(ctrl_o, mp, ctrlmesh)
-		self.generate_CtrlLine2(ctrl_o, mp, ctrlmesh, path)
-			
+		# create control-line
+		self.generate_CtrlLine(mp, ctrlmesh, path)
 		
+		ma = ctrl_o.KIMAttributes
+		ma.parttype = KIMPartAttributes.RAFTER
+		ma.objecttype = KIMPartAttributes.CTRLLINE
+	
 		#set_normals(ctrl_o)
 		ctrl_o.parent = mainobject
 		ctrl_o.location.x = 0 # relative to parent
@@ -111,39 +110,40 @@ class SimpleWall:
 		ctrl_o.location.z = 0
 		ctrl_o.lock_location = (True, True, True)
 		ctrl_o.lock_rotation = (True, True, True)
-		ctrl_o.lock_scale = (True, True, True)
 		ctrl_o.display_type = 'WIRE'
 		ctrl_o.hide_viewport = False
 		ctrl_o.hide_render = True
-			
-		#ctrl_o.data.vertices[0].hide = True
 		
-		# generate Mesh for simple Wall
-		generate_simpleWallMesh(mainobject, mp, mainmesh, ctrl_o)
+		ctrl_o.data.vertices[0].hide = True
+		
+		#
+		# generate mesh for rafter from ctrl-Line
+		#
+		bm = bmesh.new()
+	
+		current_mode = ctrl_o.mode
+		if current_mode == 'OBJECT':
+			bm.from_mesh(ctrl_o.data)
+			bm.verts.ensure_lookup_table()
+		elif current_mode == 'EDIT':
+			bm = bmesh.from_edit_mesh(ctrl_o.data)
+			
+		ctrl_path = [item.co for item in bm.verts]
+		
+		generate_Rafter2(mp, mainmesh, ctrl_path)
+	
+		# deactivate others
+		for o in bpy.data.objects:
+			if o.select_get() is True and o.name != mainobject.name:
+				o.select_set(False)
 		
 		# at the end, all further changes should be updated
 		mp.update = True
 		
-		
 	#
+	# generates Crl-Line-Mesh from path
 	#
-	#
-	def generate_CtrlLine(self, mainobject, mp, tmp_mesh):
-		global lastcoords
-		
-		vertices = []
-		
-		sLength = mp.length
-		
-		vertices.extend([(0, 0, 0), 
-						 (sLength, 0, 0)
-						 ])
-						 
-		tmp_mesh.from_pydata(vertices, [(0,1)], [])
-		
-		lastcoords = [(0, 0, 0), (sLength, 0, 0)]
-		
-	def generate_CtrlLine2(self, mainobject, mp, tmp_mesh, path):
+	def generate_CtrlLine(self, mp, tmp_mesh, path):
 		global lastcoords
 		
 		vertices = []
@@ -159,86 +159,438 @@ class SimpleWall:
 			edges.append((index-1, index))	
 						 
 		tmp_mesh.from_pydata(vertices, edges, [])
+		
+		
+	#
+	# Update main Mesh
+	#
+	def update_object(self, context):
+		
+		print("::update_object ")
+		
+		o = context.active_object
+		
+		mattr = o.KIMAttributes
+		
+		print("::update_object "+str(mattr.objecttype))
+		
+		if mattr.objecttype == KIMPartAttributes.MAINOBJECT:
+	
+			mp = o.KIMPartProps
+			
+			if mp.update:
+				
+				if mp.standards == '1':
+				 	context.scene.sebi_showcustomsize_property = True
+				else:
+					context.scene.sebi_showcustomsize_property = False
+				
+				oldmesh = o.data
+				oldname = o.data.name
+				
+				# Now we select that object to not delete it.
+				o.select_set(True)
+				bpy.context.view_layer.objects.active = o
+				
+				# and we create a new mesh
+				tmp_mesh = bpy.data.meshes.new("temp")
+				
+				print("::update_object width: "+str(mp.width)+", "+str(mp.height)+", "+str(mp.depth))
+				
+				o.data = tmp_mesh
+				
+				# get the ctrl-Line
+				ctrl_o = None
+				for child in o.children:
+					if child.KIMAttributes.objecttype ==  KIMPartAttributes.CTRLLINE:
+						ctrl_o = child
+						break
+				
+				#get the coordinates from ctrl-Object
+				bm = bmesh.new()
+	
+				current_mode = ctrl_o.mode
+				if current_mode == 'OBJECT':
+					bm.from_mesh(ctrl_o.data)
+					bm.verts.ensure_lookup_table()
+				elif current_mode == 'EDIT':
+					bm = bmesh.from_edit_mesh(ctrl_o.data)
+				
+				ctrl_co = [v.co for v in bm.verts]
+				
+				# Finally we create all that again (except main object),
+				generate_Rafter2( mp, tmp_mesh, ctrl_co)
+				
+				
+				# Remove data (mesh of active object),
+				#bpy.data.meshes.remove(oldmesh)
+				tmp_mesh.name = oldname
+				# and select, and activate, the main object
+				o.select_set(True)
+				bpy.context.view_layer.objects.active = o
+		
+		elif mattr.objecttype == KIMPartAttributes.CTRLLINE:
+			mainobject = o.parent
+			updateFromCtrlLine(mainobject, o)
 
+#
+# converts Object as List of Vertices Coordinates (mathutil.Vectors) 
+#
+def getVertsCo(ctrl_o):
+		#
+		# generate mesh for rafter from ctrl-Line
+		#
+		bm = bmesh.new()
+	
+		current_mode = ctrl_o.mode
+		if current_mode == 'OBJECT':
+			bm.from_mesh(ctrl_o.data)
+			bm.verts.ensure_lookup_table()
+		elif current_mode == 'EDIT':
+			bm = bmesh.from_edit_mesh(ctrl_o.data)
+			
+		ctrl_path = [item.co for item in bm.verts]
+		
+		return ctrl_path
+		
+#
+# Update main Mesh
+#
+def update_object(context):
+		
+		print("::update_object Module ")
+		
+		o = context.active_object
+		
+		mattr = o.KIMAttributes
+		
+		print("::update_object "+str(mattr.objecttype))
+		
+		if mattr.objecttype == KIMPartAttributes.MAINOBJECT:
+	
+			mp = o.KIMPartProps
+			
+			if mp.update:
+				
+				if mp.standards == '1':
+				 	context.scene.sebiBauteile.sebi_showcustomsize_property = True
+				else:
+					context.scene.sebiBauteile.sebi_showcustomsize_property = False
+				
+				oldmesh = o.data
+				oldname = o.data.name
+				
+				# Now we select that object to not delete it.
+				o.select_set(True)
+				bpy.context.view_layer.objects.active = o
+				
+				# and we create a new mesh
+				tmp_mesh = bpy.data.meshes.new("temp")
+				
+				print("::update_object width: "+str(mp.width)+", "+str(mp.height)+", "+str(mp.depth))
+				
+				o.data = tmp_mesh
+				
+				# get the ctrl-Line
+				ctrl_o = None
+				for child in o.children:
+					if child.KIMAttributes.objecttype ==  KIMPartAttributes.CTRLLINE:
+						ctrl_o = child
+						break
+				
+				#get the coordinates from ctrl-Object
+				bm = bmesh.new()
+	
+				current_mode = ctrl_o.mode
+				if current_mode == 'OBJECT':
+					bm.from_mesh(ctrl_o.data)
+					bm.verts.ensure_lookup_table()
+				elif current_mode == 'EDIT':
+					bm = bmesh.from_edit_mesh(ctrl_o.data)
+				
+				ctrl_co = [v.co for v in bm.verts]
+				
+				# Finally we create all that again (except main object),
+				generate_Rafter2( mp, tmp_mesh, ctrl_co)
+				
+				
+				# Remove data (mesh of active object),
+				#bpy.data.meshes.remove(oldmesh)
+				tmp_mesh.name = oldname
+				# and select, and activate, the main object
+				o.select_set(True)
+				bpy.context.view_layer.objects.active = o
+		
+		elif mattr.objecttype == KIMPartAttributes.CTRLLINE:
+			mainobject = o.parent
+			updateFromCtrlLine(mainobject, o)	
+
+#
+# generates a Rafter mesh from ctrl-Line, 
+# with the properties of mp, 
+# updates tmp_mesh
+#
+def generate_Rafter( mp, tmp_mesh, ctrl_o):
+	
+	myvertex = []
+	myfaces = []
+	v = 0
+	
+	print("::generate_Rafter  mp.rafter_angle: "+str(mp.rafter_angle))
+	bm = bmesh.new()
+	
+	current_mode = ctrl_o.mode
+	if current_mode == 'OBJECT':
+		bm.from_mesh(ctrl_o.data)
+		bm.verts.ensure_lookup_table()
+	elif current_mode == 'EDIT':
+		bm = bmesh.from_edit_mesh(ctrl_o.data)
+	
+	endvertex = bm.verts[-1].co
+	
+	# Mesh defined in Object-Coordinates
+	# Rafter will span from Origin to endvertex of Ctrl-Line (also in Object-Coordinates)
+	sWidth, sHeight = mp.getSizeOfElement(mp.standards)
+	angle = mp.rafter_angle 
+	ueber = mp.ueber
+	
+	deltaXHeight = sin(radians(angle))*sHeight
+	deltaZHeight = cos(radians(angle))*sHeight
+	
+	
+	
+	
+	deltaZHeightFirst = sHeight/cos(radians(angle))
+	
+	#sX = 0.1
+	#sY = 0.2
+	# in x-z Ebene counter-clockwise
+	myvertex.extend([(0, +sWidth/2, 0), 
+					 (endvertex.x, +sWidth/2, tan(radians(angle))*endvertex.x ),
+					 (endvertex.x, +sWidth/2, tan(radians(angle))*endvertex.x + deltaZHeightFirst),
+					 (-ueber - deltaXHeight, +sWidth/2, -(tan(radians(angle))*ueber) + deltaZHeight ),
+					 (-ueber, +sWidth/2, -(tan(radians(angle))*ueber) )
+					 ])
+	
+	
+		
+		
+		
+	myfaces = [(0, 1, 2, 3, 4)]
+					 
+	myvertex.extend([(0, -sWidth/2, 0), 
+					 (endvertex.x, -sWidth/2, tan(radians(angle))*endvertex.x ),
+					 (endvertex.x, -sWidth/2, tan(radians(angle))*endvertex.x + deltaZHeightFirst),
+					 (-ueber - deltaXHeight, -sWidth/2, -(tan(radians(angle))*ueber) + deltaZHeight ),
+					 (-ueber, -sWidth/2, -(tan(radians(angle))*ueber) )
+					 ])
+							 
+	myfaces.extend([(5, 6, 7, 8, 9)])
+	
+	myfaces.extend([(3, 2, 7, 8, 3)])#oben
+	myfaces.extend([(0, 1, 6, 5, 9, 4)])#unten
+	myfaces.extend([(1, 2, 7, 6)])
+	myfaces.extend([(3, 4, 9, 8)])
+	
+	v = len(myvertex)
+	
+	tmp_mesh.from_pydata(myvertex, [], myfaces)
+	tmp_mesh.update(calc_edges=True)
+
+#
+# generates a Rafter mesh from list of Vector-Coordinates, 
+# with the properties of mp, 
+# updates tmp_mesh
+#
+def generate_Rafter2( mp, tmp_mesh, ctrl_path):
+	
+	myvertex = []
+	myfaces = []
+	v = 0
+	
+	print("::generate_Rafter  mp.rafter_angle: "+str(mp.rafter_angle))
+	print("::generate_Rafter  mp.right_angled: "+str(mp.right_angled)+" level_cut: "+str(mp.level_cut))
+	
+	endvertex = ctrl_path[-1]
+	
+	# Mesh defined in Object-Coordinates
+	# Rafter will span from Origin to endvertex of Ctrl-Line (also in Object-Coordinates)
+	sWidth, sHeight = mp.getSizeOfElement(mp.standards)
+	angle = mp.rafter_angle 
+	ueber = mp.ueber
+	
+	overhang_style = mp.overhang_style
+	print("::generate_Rafter  overhang_style: "+str(overhang_style))
+	
+	# distance in x-y Plane
+	d = math.sqrt( math.pow(ctrl_path[-1].x - ctrl_path[0].x, 2) + math.pow(ctrl_path[-1].y - ctrl_path[0].y, 2))
+	
+	# delta values for senkrechter Ueberstand (Sparren rechtwinklig geschnitten)
+	deltaXHeight = sin(radians(angle))*sHeight
+	deltaZHeight = cos(radians(angle))*sHeight
+	
+	
+	deltaZHeightFirst = sHeight/cos(radians(angle))
+	
+	offsetdeltas = getOffsetDeltas(sWidth/2, ctrl_path[0], ctrl_path[-1])
+	offsetX = offsetdeltas.x
+	offsetY = offsetdeltas.y
+	
+	deltaZOne = tan(radians(angle))*ueber
+	
+	# axis point of ueber
+	t = ueber/d
+	ueberpoint = intersectionPoint(t, ctrl_path[0], ctrl_path[-1])
+	
+	deltaLengthRightAngle = sin(radians(angle))*sHeight
+	rightAnglePoint = intersectionPoint(deltaLengthRightAngle/ueber, ueberpoint, mathutils.Vector((0,0,0)))
+	deltaZRightAngle = ((tan(radians(angle))*ueber) / ueber) * (ueber-deltaLengthRightAngle)
+	
+	
+	deltaLengthLevelCut = (deltaZHeightFirst/2) * (ueber/ deltaZOne)
+	levelCutPoint = intersectionPoint(deltaLengthLevelCut/ueber, ueberpoint, mathutils.Vector((0,0,0)))
+	
+	# 
+	# in x-z Ebene counter-clockwise
+	#
+	myvertex.extend([(0 + offsetX, offsetY, 0), 
+					 (endvertex.x + offsetX, endvertex.y + offsetY, tan(radians(angle))*d ),
+					 (endvertex.x + offsetX, endvertex.y + offsetY, tan(radians(angle))*d + deltaZHeightFirst),
+					 (-ueberpoint.x + offsetX, -ueberpoint.y + offsetY, -(tan(radians(angle))*ueber) + deltaZHeightFirst )
+					 ])
+	
+	
+	
+	# doing different Overhangs
+	if overhang_style == 'plumb_cut': # straight lotrecht
+		myvertex.extend([
+					 (-ueberpoint.x + offsetX , -ueberpoint.y + offsetY, -(tan(radians(angle))*ueber) )
+					 ])
+		myfaces = [(0, 1, 2, 3, 4)]
+	elif overhang_style == 'tail_cut': # right-angle
+		myvertex.extend([
+					 (-rightAnglePoint.x + offsetX , -rightAnglePoint.y + offsetY, -deltaZRightAngle)
+					 ])
+		myfaces = [(0, 1, 2, 3, 4)]
+	elif overhang_style == 'level_cut': # plumb and level-cut, one vertex more
+		myvertex.extend([
+					 (-ueberpoint.x + offsetX , -ueberpoint.y + offsetY, -(tan(radians(angle))*ueber) + (deltaZHeightFirst / 2)),
+					 (-levelCutPoint.x + offsetX , -levelCutPoint.y + offsetY, -(tan(radians(angle))*ueber) + (deltaZHeightFirst / 2))
+					 ])
+		myfaces = [(0, 1, 2, 3, 4, 5)]
+	
+	 
+	# other side of rafter
+	myvertex.extend([(0 - offsetX, -offsetY, 0), 
+					 (endvertex.x - offsetX, endvertex.y - offsetY, tan(radians(angle))*d ),
+					 (endvertex.x - offsetX, endvertex.y - offsetY, tan(radians(angle))*d + deltaZHeightFirst),
+					 (-ueberpoint.x - offsetX, -ueberpoint.y - offsetY, -(tan(radians(angle))*ueber) + deltaZHeightFirst )
+					 ])
+					 
+	if overhang_style == 'plumb_cut': # straight lotrecht
+		myvertex.extend([
+					 (-ueberpoint.x - offsetX, -ueberpoint.y - offsetY, -(tan(radians(angle))*ueber) )
+					 ])
+		myfaces.extend([(5, 6, 7, 8, 9)])
+	elif overhang_style == 'tail_cut': # right-angle
+		myvertex.extend([
+					 (-rightAnglePoint.x - offsetX , -rightAnglePoint.y - offsetY, -deltaZRightAngle)
+					 ])
+		myfaces.extend([(5, 6, 7, 8, 9)])
+	elif overhang_style == 'level_cut': # plumb and level-cut, one vertex more
+		myvertex.extend([
+					 (-ueberpoint.x - offsetX , -ueberpoint.y - offsetY, -(tan(radians(angle))*ueber) + (deltaZHeightFirst / 2)),
+					 (-levelCutPoint.x - offsetX , -levelCutPoint.y - offsetY, -(tan(radians(angle))*ueber) + (deltaZHeightFirst / 2))
+					 ])
+		myfaces.extend([(6, 7, 8, 9, 10, 11)])
+		
+	if overhang_style == 'tail_cut' or overhang_style == 'plumb_cut':
+		myfaces.extend([(3, 2, 7, 8, 3)])#oben
+		myfaces.extend([(0, 1, 6, 5, 9, 4)])#unten
+		myfaces.extend([(1, 2, 7, 6)])
+		myfaces.extend([(3, 4, 9, 8)])
+	
+	if overhang_style == 'level_cut':
+		myfaces.extend([(3, 2, 8, 9)])#oben
+		myfaces.extend([(0, 1, 7, 6, 11, 10, 4, 5)])#unten
+		myfaces.extend([(4, 10, 9, 3)]) # plumb cut
+		myfaces.extend([(4, 5, 11, 10)]) # level-cut
+		myfaces.extend([(1, 7, 8, 2)]) # First
+	
+	v = len(myvertex)
+	
+	tmp_mesh.from_pydata(myvertex, [], myfaces)
+	tmp_mesh.update(calc_edges=True)
 
 
 
 #
-# Operator Class for creating a Simple-Wall
+# Operator for Add-Mesh
 #
-# Invoke with Property Dialog asking for width of the wall
-#
-class SEBITEILE_OT_SIMPLEWALLPROPS(Operator):
-	bl_idname = "mesh.sebiteile_simplewallprops"
-	bl_label = "simple Wall"
-	bl_description = "simple Wall Generator"
+class SEBITEILE_OT_RAFTER(Operator):
+	bl_idname = "mesh.sebiteile_rafter"
+	bl_label = "Sparren"
+	bl_description = "Rafter Generator"
 	bl_category = 'View'
 	bl_options = {'REGISTER', 'UNDO', 'INTERNAL'}
-	bl_property = "width"
+	bl_property = "angle"
 	
-	width: FloatProperty(name="Width", default = 0.2)
-	
-	
-	def __init__(self):
-		print("Start")
-
-	def __del__(self):
-		"""called when the operator has finished"""
-		print("__del__")
-			
-		return None
+	#text: bpy.props.StringProperty(name="Name", default="")
+	type: bpy.props.StringProperty(name="Type", default="Rafter")
+	angle: FloatProperty(name="Roof-Angle", default = 45.0)
+	ueber: FloatProperty(name="Überstand", default = 0.5)
 	
 	@classmethod
 	def poll(cls, context):
 		return True
 	
-	# 
+	# -----------------------------------------------------
 	# Draw (create UI interface)
-	# 
+	# -----------------------------------------------------
+	
 	def draw(self, context):
-		print("SEBITEILE_OT_SIMPLEWALL::draw context: "+str(context))
+		print("SEBITEILE_OT_RAFTER::draw context: "+str(context))
 		
 		row = self.layout
-		row.prop(self, 'width', text="Breite")
+		#row.label(text="Winkel")
+		row.prop(self, 'angle', text="Dach Winkel")
+		row.prop(self, 'ueber', text="Überstand")
 	
-	# 
+	# -----------------------------------------------------
 	# Execute
-	# 
+	# -----------------------------------------------------
 	def execute(self, context):
-		print("SEBITEILE_OT_SIMPLEWALL::execute as_keywords(): "+str(self.as_keywords() ) )
+		print("SEBITEILE_OT_RAFTER::execute rafter_angle: "+str(self.angle))
+		print("SEBITEILE_OT_RAFTER::execute as_keywords(): "+str(self.as_keywords() ) )
 		
-		self.report(
-			{'INFO'}, 'simple wall width: %.2f  ' %
-			(self.width)
-		)
+		type = "Rafter"
 		
 		if bpy.context.mode == "OBJECT":
 			
+			# fixed size Rafter on cursor-Location
 			cursor_loc = bpy.context.scene.cursor.location
-			
 			path = [cursor_loc, mathutils.Vector((cursor_loc.x + 2,cursor_loc.y,cursor_loc.z))]
 			
-			initDic = {'width': self.width, 'path': path}
+			initDic = self.as_keywords()
+			initDic['path'] = path
 			
-			wall = SimpleWall(initDic)
-			wall.create_object(context)
+			rafter = Rafter(initDic)
 			
-			#DecorationsHandler.install(context)
+			rafter.create_object(context)
+			
+			CtrlLineDrawHandler.install()
 			
 			return {'FINISHED'}
 		else:
 			self.report({'WARNING'}, "sebiteile: Option only valid in Object mode")
 			return {'CANCELLED'}
 			
-	#
-	# Invoke with Property Dialog
-	#
+			
 	def invoke(self, context, event):
-		print("SEBITEILE_OT_SIMPLEWALLPROPS::invoke event.type: "+str(event.type) )
-		
 		wm = context.window_manager
-		return wm.invoke_props_popup(self,event)
-
+		return wm.invoke_props_dialog(self)
+		
+		
 #
 # POST_View call
 #
@@ -399,74 +751,20 @@ def draw_callback_px(self, context):
 		batch.draw(shader)
 	'''
 	
-'''		
-def value_update(self, context):
-		print("::value_update "+str(context)+' '+str(self))
-		print("::value_update id_data "+str(self.id_data)) 
-		self.constraint = 'DELTAVALUES'
-		
-		# using class-Variable
-		cls = SEBITEILE_OT_SIMPLEWALLADD.instance
-		#print('cls '+str(cls))
-		
-		# using class-method
-		poll = bpy.ops.mesh.sebiteile_simplewalladd.poll()
-		#print('poll '+str(poll))
-		
-		#print('bpy.ops.mesh.sebiteile_simplewalladd : '+str(bpy.ops.mesh.sebiteile_simplewalladd)) # a function
-		
-		cls.update(context)
-		
-		
-def angle_update(self, context):
-		print("::angle_update ")
-		if self.angle_length:
-			self.constraint = 'ANGLE_LENGTH'
-		else:
-			self.constraint = 'ANGLE'
-		SEBITEILE_OT_SIMPLEWALLADD.instance.update(context)
-		
-def length_update(self, context):
-		print("::length_update ")
-		if self.angle_length:
-			self.constraint = 'ANGLE_LENGTH'
-		else:
-			self.constraint = 'LENGTH'
-		SEBITEILE_OT_SIMPLEWALLADD.instance.update(context)
-		
-def angle_length_update(self, context):
-	self.constraint = 'ANGLE_LENGTH'
-	SEBITEILE_OT_SIMPLEWALLADD.instance.update(context)
-	
-	
 
-
-class ConstraintProperties(bpy.types.PropertyGroup):
-	dX: FloatProperty(name="dX", default = 0.2, update=value_update)
-	dY: FloatProperty(name="dY", default = 0.2, update=value_update)
-	
-	angle: FloatProperty(name="angle", default = 45, update=angle_update)
-	length: FloatProperty(name="length", default = 0.2, update=length_update)
-	
-	angle_length: BoolProperty(name="angle_length", default = False, update=angle_length_update)
-	
-	width: FloatProperty(name="Width", default = 0.2)
-	
-	constraint: StringProperty(name="constraint", default = 'UNDEFINED')
-'''
 
 def msgbus_callback(self, context):
 	print("tool_settings changed!", self, context)
 	self.updateSnapSettings(context)
 
 #
-# Modal Operator Class for creating a Simple-Wall JUST Modal
+# Modal Operator Class for creating a Rafter JUST Modal
 # runs the whole time, until another Tool is selected
 #
-class SEBITEILE_OT_SIMPLEWALLADD(Operator):
-	bl_idname = "mesh.sebiteile_simplewalladd"
-	bl_label = "simple Wall"
-	bl_description = "simple Wall Generator"
+class SEBITEILE_OT_RAFTERADD(Operator):
+	bl_idname = "mesh.sebiteile_rafteradd"
+	bl_label = "Rafter"
+	bl_description = "simple Rafter Generator"
 	bl_category = 'View'
 	bl_options = {'REGISTER', 'INTERNAL'}
 	
@@ -475,83 +773,25 @@ class SEBITEILE_OT_SIMPLEWALLADD(Operator):
 	# classvariable
 	instance = None
 	
-	'''
-	def cb_set(self, value):
-		print('cb_set() self: ', self)
-		print('cb_set() my_prop, value: ', self.constraint, self.dX, value)
-		# Do not do this: self.my_prop = value, because it will cause
-		# recursive calling of this callback function
-		#values[self.name] = value
-		self.constraint = 'DELTAVALUES'
-		constraint = 'DELTAVALUES'
-		print('cb_set() constraint: ', constraint)
-		
-		return None
 	
-	def value_update(self, context):
-		print("::value_update "+str(context)+' '+str(self))
-		print("::value_update id_data "+str(self.id_data)) 
-		self.constraint = 'DELTAVALUES'
-		print("::value_update constraint: "+str(self.constraint))
-		
-	'''	
-		
-	
-	#
-	# do not work with a update-function:
-	# the 'self' in the update-function does not point to this Operator class
-	# maybe instead to a RNA-Struct with the same name
-	# it is not possible to access variables in this class from the update-function
-	# and it is not possible to acess the current value of these Properties from within this class over self.
-	# for example: dX is updated, the update-function is called, which sets the constraint Property over self.constraint=..., 
-	# but: from within this class, in the modal-function, i cannot get the correct value over self.constraint
-	# the 'selfs' in the update-function and in this class are pointing to differrent bpy_structs
-	# the same counts for 'set'-function
-	#
-	# I think it has something to do that this class is instatiated through a WorkSpaceTool:
-	# first trough the keymap and second as props for the UI
-	# is there a way to use only one Instance for both Usages (bl_keymap and tool.operator_properties)?
-	#
-	'''
-	width: FloatProperty(name="Width", default = 0.2)
-	
-	dX: FloatProperty(name="dX", default = 0.2, update=value_update)
-	dY: FloatProperty(name="dY", default = 0.2, update=value_update)
-	
-	angle: FloatProperty(name="angle", default = 45, update=angle_update)
-	length: FloatProperty(name="length", default = 0.2, update=length_update)
-	
-	constraint: StringProperty(name="constraint", default = 'UNDEFINED')
-	'''
 	
 	def __init__(self):
 		print("Start")
-		print("Start instance: "+str(SEBITEILE_OT_SIMPLEWALLADD.instance))
+		print("Start instance: "+str(SEBITEILE_OT_RAFTERADD.instance))
 
 	# is called when the garbage collector happens to be collecting the objects
 	def __del__(self):
 		print("__del__")
 		print("__del__ "+str(self))
-		SEBITEILE_OT_SIMPLEWALLADD.instance = None
+		SEBITEILE_OT_RAFTERADD.instance = None
 		return None
 	
 	@classmethod
 	def poll(cls, context):
 		print("::poll cls: "+str(cls))
 		
-		#
-		# Idee mit opsregistry klappt nicht, Operatoren werden dort meist nach Beenden hinzugefügt
-		#
-		#opsregistry = context.window_manager.operators
-		#c_classname = 'MESH_OT_sebiteile_simplewalladd'
-		
-		# only one instance
-		#if c_classname in opsregistry.keys():
-		#	print("::poll ging t return False (c_classname in opsregistry.keys())")
-		#	return False
-			
-		if SEBITEILE_OT_SIMPLEWALLADD.instance:
-			print("  going to return False, already SEBITEILE_OT_SIMPLEWALLADD.instance "+str(SEBITEILE_OT_SIMPLEWALLADD.instance))
+		if SEBITEILE_OT_RAFTERADD.instance:
+			print("  going to return False, already SEBITEILE_OT_RAFTERADD.instance "+str(SEBITEILE_OT_RAFTERADD.instance))
 			return False
 		
 		print("  going to return True")
@@ -571,50 +811,26 @@ class SEBITEILE_OT_SIMPLEWALLADD(Operator):
 	# Execute
 	# 
 	def execute(self, context):
-		print("SEBITEILE_OT_SIMPLEWALL::execute as_keywords(): "+str(self.as_keywords() ) )
-		
-		
 		
 		if bpy.context.mode == "OBJECT":
 			
-			props = context.scene.KIMSimpleWallAdd
-			print(props.items())
-			print(props.keys())
-			print(props.values())
+			ueber = properties.getValueOrDefault(context.scene.KIMPartAdd, 'ueber')
+			angle = properties.getValueOrDefault(context.scene.KIMPartAdd, 'rafter_angle')
 			
-			items = [item for item in props.items()]
-			print(items)
+			initDic = {'ueber': ueber, 'rafter_angle': angle, 'path': self.mouse_path}
 			
-			keys = [item for item in props.keys()]
-			print(keys)
+			print('initDic: '+str(initDic))
 			
+			self.report( {'INFO'}, 'ueber: %.2f  ' % (ueber) )
 			
-			
-			set = props.is_property_set('width')
-			print(set)
-			
-			if not set:
-				prop = context.scene.KIMSimpleWallAdd.bl_rna.properties['width']
-				print(prop)
-				width = prop.default
-				print(width)
-			else:
-				width = props.get('width')
-				print(width)
-			
-			
-			initDic = {'width': width, 'path': self.mouse_path}
-			
-			self.report( {'INFO'}, 'width: %.2f  ' % (width) )
-			
-			wall = SimpleWall(initDic)
-			wall.create_object(context)
+			rafter = Rafter(initDic)
+			rafter.create_object(context)
 			
 			CtrlLineDrawHandler.install()
 			
 			#return {'FINISHED'}
 		else:
-			self.report({'WARNING'}, "sebiteile: Option only valid in Object mode")
+			self.report({'WARNING'}, "Option only valid in Object mode")
 			return {'CANCELLED'}
 			
 	def modal(self, context, event):
@@ -641,7 +857,7 @@ class SEBITEILE_OT_SIMPLEWALLADD(Operator):
 		isactive = False
 		for tool in context.workspace.tools:
 			#print("  tool: "+str(tool.idname))
-			if tool.idname == 'kim.parts_tool':
+			if tool.idname == 'kim.rafter_tool':
 				isactive = True
 		
 		print("  isactive: "+str(isactive))
@@ -734,20 +950,19 @@ class SEBITEILE_OT_SIMPLEWALLADD(Operator):
 	# Invoke with modal_handler_add
 	#
 	def invoke(self, context, event):
-		print("SEBITEILE_OT_SIMPLEWALLADD::invoke event.type: "+str(event.type) )
+		print("SEBITEILE_OT_RAFTERADD::invoke event.type: "+str(event.type) )
 		print("self: "+str(self) )
-		print("SEBITEILE_OT_SIMPLEWALLADD.instance: "+str(SEBITEILE_OT_SIMPLEWALLADD.instance) )
+		print("SEBITEILE_OT_RAFTERADD.instance: "+str(SEBITEILE_OT_RAFTERADD.instance) )
 		#print("::value_update self keys: "+str(self.keys()))
 		
-		print("RNA subclass: "+str(Operator.bl_rna_get_subclass_py('mesh.sebiteile_simplewalladd')))
 		
 		#
 		# prevent starting a new modal Operator if there is already one running
 		#
-		if SEBITEILE_OT_SIMPLEWALLADD.instance:
+		if SEBITEILE_OT_RAFTERADD.instance:
 			return {'CANCELLED'}
 		else:
-			SEBITEILE_OT_SIMPLEWALLADD.instance = self
+			SEBITEILE_OT_RAFTERADD.instance = self
 		
 		self.mouse_path = []
 		self.screen_path = []
@@ -930,7 +1145,7 @@ class SEBITEILE_OT_SIMPLEWALLADD(Operator):
 		print("modal_quit")
 		
 		# resetting fr pssible next instance
-		SEBITEILE_OT_SIMPLEWALLADD.instance = None
+		SEBITEILE_OT_RAFTERADD.instance = None
 		
 		# remove draw-handlers
 		bpy.types.SpaceView3D.draw_handler_remove(self._handle, 'WINDOW')
@@ -1114,157 +1329,16 @@ class ValidRegion:
 	
 	
 
-#
-# Update main mesh and children objects
-#
-def update_object(self, context):
-	
-	print("::update_object ")
-	
-	o = context.active_object
-	
-	mattr = o.KIMAttributes
-	
-	print("::update_object "+str(mattr.objecttype))
-	
-	if mattr.objecttype == "1":
 
-		mp = o.KIMSimpleWallProperties
-		
-		if mp.update:
-			
-			oldmesh = o.data
-			oldname = o.data.name
-			
-			# Now we select that object to not delete it.
-			o.select_set(True)
-			bpy.context.view_layer.objects.active = o
-			
-			# and we create a new mesh
-			tmp_mesh = bpy.data.meshes.new("temp")
-			
-			print("::update_object width: "+str(mp.width)+", "+str(mp.height)+", "+str(mp.depth))
-			
-			
-			o.data = tmp_mesh
-			
-			# Finally we create all that again (except main object),
-			generate_simpleWallMesh(o, mp, tmp_mesh, None)
-			
-			
-			# Remove data (mesh of active object),
-			#bpy.data.meshes.remove(oldmesh)
-			tmp_mesh.name = oldname
-			# and select, and activate, the main object
-			o.select_set(True)
-			bpy.context.view_layer.objects.active = o
-	
-	elif mattr.objecttype == "2":
-		mainobject = o.parent
-		updateFromCtrlLine(mainobject, o)
 		
 class HeightItem(PropertyGroup):
 	value: bpy.props.FloatProperty(name="height", default=2.4)		
 		
-#
-# Define property group class to create or modify
-#
-class SimpleWallObjectProperties(PropertyGroup):
-	
-	update: BoolProperty(
-			name="should update",
-			description="update Objects when true",
-			default=False,
-			)
-			
-	type: StringProperty(
-			name='Type',
-			default="SimpleWall",
-			description='Type of Part',
-			)
-	
-	width: FloatProperty(
-			name='Width',
-			min=0.01, max=0.20,
-			default=0.15, precision=3,
-			description='Part width',
-			update=update_object,
-			)
-	
-	height: FloatProperty(
-			name='Height',
-			min=0.01, max=6.00,
-			default=2.40, precision=3,
-			description='overall Wall height',
-			update=update_object,
-			)
-			
-	heights: EnumProperty(
-			items=(
-				('1', "2.40", ""),
-			),
-			name="heights",
-			default='1',
-			description="Definiert Höhen dieser Wand",
-			update=update_object,
-			)
-			
-	heightsCollection: CollectionProperty(type=HeightItem)
-			
-	length: FloatProperty(
-			name='Length',
-			min=0.1, max=6,
-			default=2.0, precision=3,
-			description='Part length',
-			update=update_object,
-			)
-			
-	standards: EnumProperty(
-			items=(
-				('1', "0.115", "MW 11.5"),
-				('2', "0.24", "MW 24"),
-			),
-			name="standards",
-			default='1',
-			description="Definiert Breite und Art dieser Wand",
-			update=update_object,
-			)
-	
-	# Materials
-	crt_mat: BoolProperty(
-			name="Create default Cycles materials",
-			description="Create default materials for Cycles render",
-			default=True,
-			update=update_object,
-			)
-	
-	# opengl internal data
-	glpoint_a: FloatVectorProperty(
-			name="glpointa",
-			description="Hidden property for opengl",
-			default=(0, 0, 0),
-			)
-	glpoint_b: FloatVectorProperty(
-			name="glpointb",
-			description="Hidden property for opengl",
-			default=(0, 0, 0),
-			)
-	glpoint_c: FloatVectorProperty(
-			name="glpointc",
-			description="Hidden property for opengl",
-			default=(0, 0, 0),
-			)
-			
-
-
-
 
 #
 # the mesh was changed by User Interaction
-# change the wall properties and fires a Update - Zyklus 
+# change the Properties and fires a Update - Zyklus 
 #
-
-
 def mesh_update(edit_obj, scene):
 	global lastcoords
 	
@@ -1277,12 +1351,12 @@ def mesh_update(edit_obj, scene):
 	
 	mainobject = edit_obj.parent
 	
-	mp = mainobject.KIMSimpleWallProperties
+	mp = mainobject.KIMPartProps
 	
-	if len(verts) != lastcoords:
+	if len(verts) != lastcoords: # first check, if a vertex is added or removed
 		updateFromCtrlLine(mainobject, edit_obj)
 		lastcoords = verts
-	else:
+	else: # second check: Coordinate of Vertices are changed
 		for index, v  in enumerate(verts):
 			if v != lastcoords[index]:
 				print("::mesh_update v: "+str(v)+" lastcoords: "+str(lastcoords[index]))
@@ -1298,7 +1372,7 @@ def updateFromCtrlLine(mainobject, ctrl_obj):
 	print("::updateFromCtrlLine: "+str(mainobject.name))
 	
 	
-	mp = mainobject.KIMSimpleWallProperties
+	mp = mainobject.KIMPartProps
 	print("::updateFromCtrlLine mp.type: "+str(mp.type))
 	
 	
@@ -1307,15 +1381,12 @@ def updateFromCtrlLine(mainobject, ctrl_obj):
 			
 	# and we create a new mesh
 	tmp_mesh = bpy.data.meshes.new("temp")
-		
-		
-	bm = bmesh.new()
-	bm = bmesh.from_edit_mesh(ctrl_obj.data)
-	endVertexCo = bm.verts[1].co
-	print("::updateFromCtrlLine endVertexCo: " +str(endVertexCo))
+	tmp_mesh.name = oldname
 	
-	# generate mesh for Wall
-	generate_simpleWallMesh(mainobject, mp, tmp_mesh, ctrl_obj)
+	# generate new mesh for Rafter
+	ctrl_path = getVertsCo(ctrl_obj)
+	
+	generate_Rafter2(mp, tmp_mesh, ctrl_path)
 		
 	mainobject.data = tmp_mesh # ersetze mesh hier
 	
@@ -1325,94 +1396,7 @@ def updateFromCtrlLine(mainobject, ctrl_obj):
 def show_enum_values(obj, prop_name):
 	print([item.name for item in obj.bl_rna.properties[prop_name].enum_items])
 
-def generate_simpleWallMesh(mainobject, mp, tmp_mesh, ctrl_o):
-	myvertex = []
-	myfaces = []
-	v = 0
-	
-	print("::generate_simpleWallMesh ")
-	print("::generate_simpleWallMesh mode: "+str(bpy.context.object.mode))
-	bm = bmesh.new()
-	
-	current_mode = ctrl_o.mode
-	if current_mode == 'OBJECT':
-		bm.from_mesh(ctrl_o.data)
-		bm.verts.ensure_lookup_table()
-	elif current_mode == 'EDIT':
-		bm = bmesh.from_edit_mesh(ctrl_o.data)
-	
-	v = len(bm.verts)
-	
-	sWidth = mp.width
-	sLength = mp.length
-	sHeight = mp.height
-	
-	print("::generate_simpleWallMesh %f %f %f " % (sWidth, sHeight, sLength))
-	
-	
-	
-	endVertexCo = bm.verts[1].co
-	print("::generate_simpleWallMesh endVertexCo: " +str(endVertexCo))
-	
-	# generating coordinate List from the cotrl-Line
-	vertsCosList = [item.co for item in bm.verts]
-	print("::generate_simpleWallMesh vertsCosList: " +str(vertsCosList))
-	
-	newPoints = polygons.offset(sWidth/2, vertsCosList)
-	myvertex.extend(newPoints)
-	
-	newPoints2 = polygons.offset(-sWidth/2, vertsCosList)
-	
-	print("::generate_simpleWallMesh newPoints -offset: " +str(newPoints))
-	
-	myvertex.extend(newPoints2[::-1]) # reverse order
-	
-	# Höhen
-	show_enum_values(mainobject.KIMSimpleWallProperties, 'heights')
-	
-	heightvertices = []
-	for vertex in myvertex:
-		newvertex = mathutils.Vector((vertex.x, vertex.y, vertex.z + sHeight))
-		heightvertices.append(newvertex)
-		
-	myvertex.extend(heightvertices)
-	
-	#sX = 0.1
-	#sY = 0.2
-	# in x-z Ebene counter-clockwise
-	#myvertex.extend([(0, -sWidth/2, 0), 
-	#				(endVertexCo.x, -sWidth/2, 0),
-	#				(endVertexCo.x, sWidth/2, 0),
-	#				(0, sWidth/2, 0)])
-	bottomface = []
-	for index in range(0, 2*v):
-		bottomface.append(index)
-							 
-	tuple1 = tuple(bottomface)						 
-	myfaces = [tuple1]
-	
-	topface = []
-	for index in range(2*v, 2*2*v):
-		topface.append(index)
-	tuple2 = tuple(topface)						 
-	myfaces.extend([tuple2])
-	
-	#side-faces
-	for index in range(1,v):
-		face = [(index-1, index, index+2*v, index+2*v-1)]
-		myfaces.extend(face)
-		face = [(index+v-1, index+v, index+3*v, index+3*v-1)]
-		myfaces.extend(face)
-		
-	#end-faces
-	face = [(v-1, v, 3*v, 3*v-1)]
-	myfaces.extend(face)
-	face = [(2*v-1, 0, 2*v, 4*v-1)]
-	myfaces.extend(face)
-	
-	
-	tmp_mesh.from_pydata(myvertex, [], myfaces)
-	tmp_mesh.update(calc_edges=True)
+
 	
 
 		

@@ -12,9 +12,12 @@ from math import pi, radians, sin, cos, tan
 from bpy.types import Operator, PropertyGroup, Object, Panel
 from bpy.types import SpaceView3D
 from bpy.props import StringProperty, FloatProperty, BoolProperty, IntProperty, FloatVectorProperty, CollectionProperty, EnumProperty, PointerProperty
-#from .achm_tools import *
 
+from . import properties
+from .ctrlline_drawhandler import CtrlLineDrawHandler
+from .properties import KIMPartAttributes
 
+from . import rafter
 
 # 
 # Define operator class to create object
@@ -148,7 +151,7 @@ class SEBITEILE_OT_RAFTER(Operator):
 		if bpy.context.mode == "OBJECT":
 			create_rafter_object(self, context, self.as_keywords())
 			
-			DecorationsHandler.install(context)
+			CtrlLineDrawHandler.install()
 			
 			return {'FINISHED'}
 		else:
@@ -237,8 +240,8 @@ def create_rafter_object(self, context, keyDic):
 	bpy.context.view_layer.objects.active = mainobject
 	
 	ma = mainobject.KIMAttributes
-	ma.parttype = '1'
-	ma.objecttype = '1'
+	ma.parttype = KIMPartAttributes.WOODENPART
+	ma.objecttype = KIMPartAttributes.MAINOBJECT
 	
 	# we shape the main object and create other objects as children
 	# set Standard -Values
@@ -270,7 +273,7 @@ def update_object(self, context):
 	
 	ma = o.KIMAttributes
 	
-	if ma.objecttype == '1': # main Object changed (through Property update)
+	if ma.objecttype == KIMPartAttributes.MAINOBJECT: # main Object changed (through Property update)
 
 		mp = o.KIMPartProps
 		
@@ -312,7 +315,7 @@ def update_object(self, context):
 			o.select_set(True)
 			bpy.context.view_layer.objects.active = o
 	
-	elif ma.objecttype == '2': # ctrl-Line changed
+	elif ma.objecttype == KIMPartAttributes.CTRLLINE: # ctrl-Line changed
 		mainobject = o.parent
 		updateFromCtrlLine(mainobject, o)
 
@@ -408,8 +411,8 @@ def generate_Geometry(mainobject, tmp_mesh, update=False):
 		# ctrl_o["sebi_bauteile.ctrl_line"] = True
 		
 		ma = ctrl_o.KIMAttributes
-		ma.parttype = '1'
-		ma.objecttype = '2'
+		ma.parttype = KIMPartAttributes.WOODENPART
+		ma.objecttype = KIMPartAttributes.CTRLLINE
 	
 		#set_normals(ctrl_o)
 		ctrl_o.parent = mainobject
@@ -432,7 +435,7 @@ def generate_Geometry(mainobject, tmp_mesh, update=False):
 
 	return
 
-
+'''
 # ------------------------------------------------------------------
 # Define property group class to create or modify
 # ------------------------------------------------------------------
@@ -536,7 +539,7 @@ class KIMPartProperties(PropertyGroup):
 bpy.utils.register_class(KIMPartProperties)
 Object.KIMPartProps = PointerProperty(type=KIMPartProperties)
 
-
+'''
 
 
 # ------------------------------------------------------------------
@@ -549,9 +552,9 @@ class SEBITEILE_PT_BauteileObjectPanel(Panel):
 	bl_region_type = 'UI'
 	bl_category = 'Create'
 
-	# -----------------------------------------------------
+	# 
 	# Verify if visible
-	# -----------------------------------------------------
+	# 
 	@classmethod
 	def poll(cls, context):
 		o = context.object
@@ -562,14 +565,14 @@ class SEBITEILE_PT_BauteileObjectPanel(Panel):
 		else:
 			return True
 
-# -----------------------------------------------------
+	# 
 	# Draw (create UI interface)
-	# -----------------------------------------------------
+	# 
 	def draw(self, context):
 		o = context.object
 		
 		
-		print(str(o))
+		print("SEBITEILE_PT_BauteileObjectPanel::draw "+str(o))
 		
 		try:
 			if 'KIMPartProps' not in o:
@@ -583,6 +586,23 @@ class SEBITEILE_PT_BauteileObjectPanel(Panel):
 		else:
 			myobjdat = o.KIMPartProps
 			space = bpy.context.space_data
+			print("SEBITEILE_PT_BauteileObjectPanel myobjdat: "+str(myobjdat))
+			
+			if myobjdat.type == 'Rafter':
+				properties.listener = rafter
+				# AttributeError: Writing to ID classes in this context is not allowed: Rafter.001, Object datablock, error setting KIMPartProperties.listener
+				#myobjdat.listener = rafter
+				
+				#setattr(myobjdat, 'listener', rafter)
+				# AttributeError: Writing to ID classes in this context is not allowed: Rafter.001, Object datablock, error setting KIMPartProperties.listener
+
+			else:
+				properties.listener = __import__(__name__) # set current module as listener to property change
+			
+			print("SEBITEILE_PT_BauteileObjectPanel myobjdat "+str(myobjdat))
+			print("SEBITEILE_PT_BauteileObjectPanel myobjdat.listener "+str(myobjdat.listener))
+			print("SEBITEILE_PT_BauteileObjectPanel properties.listener "+str(properties.listener))
+				
 			if not space.local_view:
 				# Imperial units warning
 				if bpy.context.scene.unit_settings.system == "IMPERIAL":
@@ -590,6 +610,7 @@ class SEBITEILE_PT_BauteileObjectPanel(Panel):
 					row.label(text="Warning: Imperial units not supported", icon='COLOR_RED')
 
 				box = layout.box()
+				box.label(text="Dimensions", icon='MESH_DATA')
 				row = box.row()
 				row.prop(myobjdat, 'standards')
 				
@@ -597,27 +618,31 @@ class SEBITEILE_PT_BauteileObjectPanel(Panel):
 				row.label(text="custom size")
 				
 				row = box.row()
-				row.enabled = context.scene.sebi_showcustomsize_property #magic happens here
+				print("SEBITEILE_PT_BauteileObjectPanel  sebiBauteile: "+str(bpy.context.scene.sebiBauteile))
+				print("SEBITEILE_PT_BauteileObjectPanel sebi_showcustomsize_property: "+str(bpy.context.scene.sebiBauteile.sebi_showcustomsize_property))
+				
+				row.enabled = bpy.context.scene.sebiBauteile.sebi_showcustomsize_property
+				
 				row.prop(myobjdat, 'width')
-				row.prop(myobjdat, 'depth')
 				row.prop(myobjdat, 'height')
 				
-				'''
-				row = box.row()
-				row.prop(myobjdat, 'wf')
-				row = box.row()
-				row.prop(myobjdat, 'r')
-				'''
-   
-				
-
 				box = layout.box()
-				if not context.scene.render.engine in {'CYCLES', 'BLENDER_EEVEE'}:
-					box.enabled = False
-				box.prop(myobjdat, 'crt_mat')
+				box.label(text="Rafter", icon='DRIVER_DISTANCE')
+				row = box.row()
+				row.prop(myobjdat, 'ueber', text="Overhang" )
+				row.prop(myobjdat, 'rafter_angle', text="Angle" )
+				
+				row = box.row()
+				row.label(text="define Overhang")
+				row = box.row()
+				row.prop(myobjdat, 'overhang_style', expand=True)
+				
 			else:
 				row = layout.row()
 				row.label(text="Warning: Operator does not work in local view mode", icon='ERROR')
+				
+	def invoke(self, context, event):
+		print("SEBITEILE_PT_BauteileObjectPanel  invole: "+str(bpy.context.scene.sebiBauteile))
 
 
 def getSizeOfElement(mp, identifier):

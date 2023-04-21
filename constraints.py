@@ -1,7 +1,32 @@
+import math
 
+import bpy, bmesh
+import bpy_extras
+from bpy_extras.view3d_utils import location_3d_to_region_2d 
+import gpu
+import bgl
+import blf
+import mathutils
+from gpu_extras.batch import batch_for_shader
+from math import pi, radians, sin, cos, tan
+from bpy.types import Operator, PropertyGroup, Object, Panel
+from bpy.types import SpaceView3D
+from bpy.props import StringProperty, FloatProperty, BoolProperty, IntProperty, FloatVectorProperty, CollectionProperty, EnumProperty, PointerProperty
+
+from . import polygons
+from . import properties
+from .polygons import intersectionLinePlane
+from .properties import KIMPartAttributes
+from .snap import SnapHandler
+from .snap import createSnapCircle
 
 
 class ConstraintHandler:
+
+
+	def __init__(self):
+		print('::ConstraintHandler __init__: '+)
+
 	def updateSnapSettings(self, context):
 		print(' updateSnapSettings snapElements: '+str(context.tool_settings.snap_elements))
 		print(' snap_node_element: '+str(context.tool_settings.snap_node_element))

@@ -78,6 +78,12 @@ def calculateNormalVectors(p0, p1):
 	ny = py / len
 	
 	return nx, ny
+	
+def getOffsetDeltas(offset, p0, p1):
+	nx, ny = calculateNormalVectors(p0, p1)
+		
+	offsetDelta = mathutils.Vector((nx * offset, ny * offset))
+	return offsetDelta
 
 #
 # calculates intersection-Point beetween Line and Plan

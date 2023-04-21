@@ -31,8 +31,10 @@ if "bpy" in locals():
 else:
 	from . import mesh_partsmaker
 	from . import simple_wall
+	from . import rafter
 	from . import kimpartstool
 	from .properties import KIMPartAttributes
+	from .properties import KIMPartProperties
 
 	print("sebi: Imported multifiles")
 
@@ -65,8 +67,8 @@ from bpy.types import (
 # ----------------------------------------------------------
 
 
-class SEBI_MT_CustomMenuAdd(Menu):
-	bl_idname = "VIEW3D_MT_mesh_custom_menu_add"
+class SEBI_MT_KIMMenuAdd(Menu):
+	bl_idname = "VIEW3D_MT_mesh_kim_menu_add"
 	bl_label = "kim Parts"
 
 
@@ -74,8 +76,8 @@ class SEBI_MT_CustomMenuAdd(Menu):
 		self.layout.operator_context = 'INVOKE_REGION_WIN'
 		self.layout.operator("mesh.sebiteile_planks", text="Brett")
 		self.layout.operator("mesh.sebiteile_pillar", text="Stütze")
-		self.layout.operator("mesh.sebiteile_beam", text="Balken")
-		self.layout.operator("mesh.sebiteile_rafter", text="Sparren")
+		self.layout.operator("mesh.sebiteile_beam", text="Beam")
+		self.layout.operator("mesh.sebiteile_rafter", text="Rafter")
 		self.layout.operator("mesh.sebiteile_simplewallprops", text="simple Wall")
 
 # --------------------------------------------------------------
@@ -84,10 +86,9 @@ class SEBI_MT_CustomMenuAdd(Menu):
 
 # Define menu
 def kimMenu_func(self, context):
-	print("::SebiMenu_func "+str(context))
 	layout = self.layout
 	layout.separator()
-	self.layout.menu("VIEW3D_MT_mesh_custom_menu_add", icon="GROUP")
+	self.layout.menu("VIEW3D_MT_mesh_kim_menu_add", icon="GROUP")
 
 @persistent
 def on_depsgraph_update(scene):
@@ -107,17 +108,20 @@ def on_depsgraph_update(scene):
 					mesh_partsmaker.mesh_update(edit_obj, scene)
 				if edit_obj.KIMAttributes.parttype == KIMPartAttributes.WALL:
 					simple_wall.mesh_update(edit_obj, scene)
+				if edit_obj.KIMAttributes.parttype == KIMPartAttributes.RAFTER:
+					rafter.mesh_update(edit_obj, scene)
 			
 			
 			
 			
 classes = (
-	SEBI_MT_CustomMenuAdd,
+	SEBI_MT_KIMMenuAdd,
 	mesh_partsmaker.SEBITEILE_OT_PLANKS,
 	mesh_partsmaker.SEBITEILE_PT_BauteileObjectPanel,
 	mesh_partsmaker.SEBITEILE_OT_PILLAR,
 	mesh_partsmaker.SEBITEILE_OT_BEAM,
-	mesh_partsmaker.SEBITEILE_OT_RAFTER,
+	rafter.SEBITEILE_OT_RAFTER,
+	rafter.SEBITEILE_OT_RAFTERADD,
 	simple_wall.SEBITEILE_OT_SIMPLEWALLPROPS,
 	simple_wall.SEBITEILE_OT_SIMPLEWALLADD
 	
@@ -143,27 +147,34 @@ def register():
 
 
 	# Define properties
-	# Register Properties
+	# Register Properties sebiBauteileProperties to Scene
 	bpy.utils.register_class(sebiBauteileProperties)
 	bpy.types.Scene.sebiBauteile = bpy.props.PointerProperty(type=sebiBauteileProperties)
 	
-	# Register Properties
+	# Register Properties KIMPartAttributes to Object
 	bpy.utils.register_class(KIMPartAttributes)
 	Object.KIMAttributes = PointerProperty(type=KIMPartAttributes)
 	
 	
+	bpy.types.Scene.KIMPartAdd = PointerProperty(type=properties.KIMPartProperties)
+	
 	bpy.utils.register_class(simple_wall.HeightItem)
 	
-	# Register Properties
+	# Register Properties SimpleWallObjectProperties to Object and Scene
 	bpy.utils.register_class(simple_wall.SimpleWallObjectProperties)
 	Object.KIMSimpleWallProperties = PointerProperty(type=simple_wall.SimpleWallObjectProperties)
+	bpy.types.Scene.KIMSimpleWallAdd = bpy.props.PointerProperty(type=simple_wall.SimpleWallObjectProperties)
 	
 	# Register Tool
 	bpy.utils.register_tool(kimpartstool.KIMPartsTool, after={"builtin.scale_cage"}, separator=True, group=True)
+	bpy.utils.register_tool(kimpartstool.KIMRafterTool, after={"kim.parts_tool"})
 	
-	# Register Properties
-	bpy.utils.register_class(simple_wall.ConstraintProperties)
-	bpy.types.Scene.KIMConstraintProperties = bpy.props.PointerProperty(type=simple_wall.ConstraintProperties)
+	# Register Constraint Properties to Scene
+	bpy.utils.register_class(properties.ConstraintProperties)
+	bpy.types.Scene.KIMConstraintProperties = bpy.props.PointerProperty(type=properties.ConstraintProperties)
+	
+	
+	
 	
 	# OpenGL flag
 	wm = WindowManager
@@ -171,9 +182,10 @@ def register():
 	wm.sebi_run_opengl = BoolProperty(default=False)
 
 class sebiBauteileProperties(bpy.types.PropertyGroup):
-	sebi_showcustomsize_property = BoolProperty(
-			name='Show custom Size Bool Property', 
-			default = True
+	sebi_showcustomsize_property: BoolProperty(
+			name='Show custom Size Bool Property',
+			description="show custom size",
+			default = True,
 			)# create bool property for switching
 	
 	sebi_select_only = BoolProperty(
@@ -250,11 +262,11 @@ def unregister():
 
 	# Remove properties
 	del Scene.sebiBauteile
+	del Scene.KIMConstraintProperties
+	del Scene.KIMPartAdd
 	
 	bpy.utils.unregister_tool(kimpartstool.KIMPartsTool)
 	
-	# remove OpenGL data
-	#achm_main_panel.ARCHIMESH_OT_HintDisplay.handle_remove(achm_main_panel.ARCHIMESH_OT_HintDisplay, bpy.context)
 	
 	#wm = bpy.context.window_manager
 	#p = 'archimesh_run_opengl'

@@ -50,10 +50,54 @@ class KIMPartsTool(WorkSpaceTool):
 		#props = tool.operator_properties("mesh.sebiteile_simplewalladd")
 		#props = layout.operator('mesh.sebiteile_simplewalladd')
 		props = context.scene.KIMConstraintProperties
+		simplewallprops = context.scene.KIMSimpleWallAdd
+		
 		
 		layout.activate_init = True
 		#row = cls.layout.row(align=True)
-		layout.prop(props, 'width', text="Breite")
+		layout.prop(simplewallprops, 'width', text="width")
+		layout.prop(simplewallprops, 'height', text="height")
+		layout.active_default = True
+		layout.prop(props, 'dX', text="dX")
+		layout.prop(props, 'dY', text="dY")
+		layout.prop(props, "angle", text="angle")
+		layout.prop(props, "angle_length", text="+")
+		layout.prop(props, "length", text="length")
+		
+
+class KIMRafterTool(WorkSpaceTool):
+	bl_space_type = 'VIEW_3D'
+	bl_context_mode = 'OBJECT'
+
+	# The prefix of the idname should be your add-on name.
+	bl_idname = "kim.rafter_tool"
+	bl_label = "add Rafter"
+	bl_description = (
+		"adds a Rafter"
+	)
+	bl_icon = os.path.join(os.path.dirname(__file__), "ops.mesh.kim_rafteradd")
+	bl_widget = None
+	bl_keymap = (
+		("mesh.sebiteile_rafteradd", {"type": 'MOUSEMOVE', "value": 'ANY'}, {"properties": []}), # start Operator instantly
+		#("mesh.sebiteile_simplewalladd", {"type": 'LEFTMOUSE', "value": 'PRESS'}, {"properties": []}), # start modal operator only with LeftMouseClick
+		 
+	)
+	
+	def draw_settings(context, layout, tool):
+	
+		print("::draw_settings tool: "+str(tool))
+	
+		#props = tool.operator_properties("mesh.sebiteile_simplewalladd")
+		#props = layout.operator('mesh.sebiteile_simplewalladd')
+		props = context.scene.KIMConstraintProperties
+		partprops = context.scene.KIMPartAdd
+		
+		
+		layout.activate_init = True
+		#row = cls.layout.row(align=True)
+		layout.prop(partprops, 'ueber', text="ueber")
+		layout.prop(partprops, 'rafter_angle', text="angle")
+		
 		layout.active_default = True
 		layout.prop(props, 'dX', text="dX")
 		layout.prop(props, 'dY', text="dY")
